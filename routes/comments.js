@@ -1,39 +1,46 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const { Op } = require('sequelize');
 const Comment = require('../models/Comment');
+const User = require('../models/User'); // Assuming User model is imported
+const authenticate = require('../middleware/auth');
 
 const router = express.Router();
 
-function authenticate(req, res, next) {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    if (!token) return res.status(401).send({ message: 'Access denied' });
-
-    try {
-        const decoded = jwt.verify(token, 'secretKey');
-        req.user = decoded;
-        next();
-    } catch (err) {
-        res.status(400).send({ message: 'Invalid token' });
+// Get comments for a specific post
+router.get('/:postId', authenticate, async (req, res) => {
+    const { postId } = req.params;
+    if (!postId) {
+        return res.status(400).json({ message: 'Post ID is required' });
     }
-}
 
-router.post('/:postId', authenticate, async (req, res) => {
     try {
-        const { content } = req.body;
-        const comment = new Comment({ content, postId: req.params.postId, userId: req.user.userId });
-        await comment.save();
-        res.status(201).send(comment);
-    } catch (error) {
-        res.status(400).send(error);
+        const comments = await Comment.findAll({
+            where: { postId },
+            include: [{ model: User, attributes: ['username'] }],
+        });
+        res.json(comments);
+    } catch (err) {
+        console.error('Error fetching comments:', err.message);
+        res.status(500).json({ message: 'Server error' });
     }
 });
 
-router.get('/:postId', async (req, res) => {
+// Post a new comment
+router.post('/', authenticate, async (req, res) => {
+    const { postId, content } = req.body;
+    const userId = req.user.user.id;
+
+    if (!postId || !content) {
+        return res.status(400).json({ message: 'Post ID and content are required' });
+    }
+
     try {
-        const comments = await Comment.find({ postId: req.params.postId }).populate('userId', 'username');
-        res.send(comments);
-    } catch (error) {
-        res.status(400).send(error);
+        const comment = await Comment.create({ postId, content, userId });
+        res.status(201).json(comment);
+    } catch (err) {
+        console.error('Error creating comment:', err.message);
+        res.status(500).json({ message: 'Server error' });
     }
 });
 
