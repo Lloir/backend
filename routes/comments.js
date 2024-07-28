@@ -1,46 +1,36 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const { Op } = require('sequelize');
 const Comment = require('../models/Comment');
-const User = require('../models/User'); // Assuming User model is imported
-const authenticate = require('../middleware/auth');
-
+const Post = require('../models/Post');
 const router = express.Router();
 
 // Get comments for a specific post
-router.get('/:postId', authenticate, async (req, res) => {
-    const { postId } = req.params;
-    if (!postId) {
-        return res.status(400).json({ message: 'Post ID is required' });
-    }
-
+router.get('/:postId', async (req, res) => {
     try {
         const comments = await Comment.findAll({
-            where: { postId },
-            include: [{ model: User, attributes: ['username'] }],
+            where: { postId: req.params.postId },
+            include: [{
+                model: Post,
+                as: 'post',
+                attributes: ['title'], // Include post title or any other attribute
+            }]
         });
-        res.json(comments);
+        res.send(comments);
     } catch (err) {
-        console.error('Error fetching comments:', err.message);
-        res.status(500).json({ message: 'Server error' });
+        console.error('Error fetching comments:', err);
+        res.status(500).send({ message: 'Server error' });
     }
 });
 
-// Post a new comment
-router.post('/', authenticate, async (req, res) => {
-    const { postId, content } = req.body;
-    const userId = req.user.user.id;
-
-    if (!postId || !content) {
-        return res.status(400).json({ message: 'Post ID and content are required' });
-    }
+// Create a new comment for a post
+router.post('/', async (req, res) => {
+    const { content, postId, userId } = req.body;
 
     try {
-        const comment = await Comment.create({ postId, content, userId });
-        res.status(201).json(comment);
+        const comment = await Comment.create({ content, postId, userId });
+        res.status(201).send(comment);
     } catch (err) {
-        console.error('Error creating comment:', err.message);
-        res.status(500).json({ message: 'Server error' });
+        console.error('Error creating comment:', err);
+        res.status(500).send({ message: 'Server error' });
     }
 });
 

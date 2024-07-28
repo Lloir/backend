@@ -113,6 +113,7 @@ router.post('/login', loginLimiter, validateLogin, checkValidation, async (req, 
         const payload = { user: { id: user.id } };
         const token = jwt.sign(payload, jwtSecret, { expiresIn: '1h' });
 
+        res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'strict' });
         res.json({ token });
     } catch (err) {
         console.error('Error in login route:', err.message);

@@ -1,90 +1,74 @@
-require('dotenv').config();
+// routes/posts.js
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
-const sharp = require('sharp');
 const { Op } = require('sequelize');
 const Post = require('../models/Post');
 const User = require('../models/User');
 const authenticate = require('../middleware/auth');
+const { body, validationResult } = require('express-validator');
 
 const router = express.Router();
 
-const storage = multer.memoryStorage();
-const upload = multer({
-    storage: storage,
-    fileFilter: (req, file, cb) => {
-        if (!file.mimetype.startsWith('image/')) {
-            return cb(new Error('Only image files are allowed'));
-        }
-        cb(null, true);
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, 'uploads/');
     },
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB size limit
+    filename: function (req, file, cb) {
+        cb(null, Date.now() + '-' + file.originalname);
+    },
 });
 
-router.post('/', authenticate, upload.array('media'), async (req, res) => {
-    try {
-        const { title, content, class: postClass, specialization, youtubeLink } = req.body;
-        const images = [];
+const upload = multer({ storage: storage });
 
-        if (req.files) {
-            for (const file of req.files) {
-                const resizedImageBuffer = await sharp(file.buffer)
-                    .resize({ width: 800 })
-                    .toBuffer();
-                const imagePath = `uploads/${Date.now()}-${file.originalname}`;
-                await sharp(resizedImageBuffer).toFile(imagePath);
-                images.push(imagePath);
-            }
+router.post(
+    '/',
+    authenticate,
+    upload.single('media'),
+    [
+        body('title').trim().escape().isLength({ min: 1 }).withMessage('Title is required'),
+        body('content').trim().escape().isLength({ min: 1 }).withMessage('Content is required'),
+        body('class').trim().escape().isLength({ min: 1 }).withMessage('Class is required'),
+        body('specialization').optional({ checkFalsy: true }).trim().escape(),
+        body('youtubeLink').optional({ checkFalsy: true }).isURL().withMessage('Invalid URL')
+    ],
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
         }
 
-        const post = await Post.create({
-            title,
-            content,
-            images,
-            class: postClass,
-            specialization,
-            youtubeLink,
-            userId: req.user.user.id,
-        });
+        try {
+            const { title, content, class: postClass, specialization, youtubeLink } = req.body;
+            const media = req.file ? req.file.path : null;
 
-        res.status(201).send(post);
-    } catch (error) {
-        console.error('Error creating post:', error.message);
-        res.status(400).send({ message: error.message });
+            const post = await Post.create({
+                title,
+                content,
+                images: media && req.file.mimetype.startsWith('image') ? [media] : [],
+                videos: media && req.file.mimetype.startsWith('video') ? [media] : [],
+                class: postClass,
+                specialization,
+                youtubeLink,
+                userId: req.user.id,
+            });
+
+            res.status(201).send(post);
+        } catch (error) {
+            console.error('Error creating post:', error.message);
+            res.status(400).send({ message: error.message });
+        }
     }
-});
+);
 
 router.get('/', async (req, res) => {
     try {
         const posts = await Post.findAll({
-            include: [{ model: User, attributes: ['username'] }],
+            include: [{ model: User, attributes: ['username'], as: 'user' }],
         });
         res.send(posts);
     } catch (error) {
         console.error('Error fetching posts:', error.message);
-        res.status(400).send({ message: error.message });
-    }
-});
-
-router.get('/search', async (req, res) => {
-    try {
-        const { query, class: postClass, specialization } = req.query;
-        const searchConditions = {};
-        if (query) searchConditions[Op.or] = [
-            { title: { [Op.iLike]: `%${query}%` } },
-            { content: { [Op.iLike]: `%${query}%` } }
-        ];
-        if (postClass) searchConditions.class = postClass;
-        if (specialization) searchConditions.specialization = specialization;
-
-        const results = await Post.findAll({
-            where: searchConditions,
-            include: [{ model: User, attributes: ['username'] }],
-        });
-        res.send(results);
-    } catch (error) {
-        console.error('Error searching posts:', error.message);
         res.status(400).send({ message: error.message });
     }
 });

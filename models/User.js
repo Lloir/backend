@@ -1,6 +1,5 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
-const bcrypt = require('bcryptjs');
 
 const User = sequelize.define('User', {
     username: {
@@ -17,17 +16,12 @@ const User = sequelize.define('User', {
         type: DataTypes.STRING,
         allowNull: false,
     },
-}, {
-    hooks: {
-        beforeCreate: async (user) => {
-            const salt = await bcrypt.genSalt(10);
-            user.password = await bcrypt.hash(user.password, salt);
-        },
+    isAdmin: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
     },
+}, {
+    timestamps: true,
 });
-
-User.prototype.matchPassword = async function(password) {
-    return await bcrypt.compare(password, this.password);
-};
 
 module.exports = User;
