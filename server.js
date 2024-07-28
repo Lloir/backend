@@ -1,11 +1,10 @@
 const express = require('express');
 const path = require('path');
-const fs = require('fs');
-const https = require('https');
 const helmet = require('helmet');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const { sequelize, models } = require('./models');
+const greenlock = require('greenlock-express');
 
 dotenv.config();
 
@@ -52,12 +51,29 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'frontend', 'build', 'index.html'));
 });
 
-const PORT = process.env.PORT || 5000;
-const httpsOptions = {
-    key: fs.readFileSync('./key.pem'),
-    cert: fs.readFileSync('./cert.pem')
+const greenlockConfig = {
+    version: 'draft-12',
+    configDir: '/etc/letsencrypt',
+    server: 'https://acme-v02.api.letsencrypt.org/directory',
+    approveDomains: ['ornabuilds.0x3d.uk'],
+    email: 'admin@0x3d.uk',
+    agreeTos: true,
+    communityMember: false,
+    telemetry: false,
+    challenges: {
+        'http-01': require('acme-http-01-standalone')
+    }
 };
 
-https.createServer(httpsOptions, app).listen(PORT, () => {
+// Create HTTP server for ACME HTTP-01 challenge and redirect to HTTPS
+require('http').createServer(greenlock.middleware(app)).listen(80, () => {
+    console.log(`ACME HTTP-01 challenge server running on port 80`);
+});
+
+// Create HTTPS server with Let's Encrypt
+greenlock.init(greenlockConfig).serve(app);
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
     console.log(`Server running on https://localhost:${PORT}`);
 });
